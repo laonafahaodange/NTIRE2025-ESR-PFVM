@@ -359,7 +359,7 @@ class ResidualGroup(nn.Module):
         return flops
 
 
-"""这部分是论文里面的堆叠RSSB部分"""
+
 
 
 class BasicLayer(nn.Module):
@@ -433,7 +433,7 @@ class BasicLayer(nn.Module):
         return flops
 
 
-"""VSSBlock其实是论文中的一个RSSB的具体结构"""
+
 
 
 class VSSBlock(nn.Module):
@@ -451,14 +451,12 @@ class VSSBlock(nn.Module):
         super().__init__()
         self.ln_1 = norm_layer(hidden_dim)
         self.self_attention = SS2D(d_model=hidden_dim, d_state=d_state, expand=expand, dropout=attn_drop_rate,
-                                   **kwargs)  # VSSM?
+                                   **kwargs)  
         self.drop_path = DropPath(drop_path)
         self.skip_scale = nn.Parameter(torch.ones(hidden_dim))
-        # self.conv_blk = CAB(hidden_dim, is_light_sr)
         self.conv_blk = ParameterFreeAttetion(hidden_dim, is_light_sr)
         self.ln_2 = nn.LayerNorm(hidden_dim)
         self.skip_scale2 = nn.Parameter(torch.ones(hidden_dim))
-        # 试着多加一条分支
         self.skip_scale3 = nn.Parameter(torch.ones(hidden_dim))
 
     def forward(self, input, x_size):
@@ -473,7 +471,7 @@ class VSSBlock(nn.Module):
                                                                                                         1).contiguous()
         x = x.view(B, -1, C).contiguous()
 
-        x = x + input.view(B, -1, C).contiguous() * self.skip_scale3  # 再加一层连接
+        x = x + input.view(B, -1, C).contiguous() * self.skip_scale3  
         return x
 
 
@@ -660,30 +658,7 @@ class SS2D(nn.Module):
         return out
 
 
-class CAB(nn.Module):
-    def __init__(self, num_feat, is_light_sr=False, compress_ratio=3, squeeze_factor=30):
-        super(CAB, self).__init__()
-        if is_light_sr:  # we use dilated-conv & DWConv for lightSR for a large ERF
-            compress_ratio = 2
-            self.cab = nn.Sequential(
-                nn.Conv2d(num_feat, num_feat // compress_ratio, 1, 1, 0),
-                nn.Conv2d(num_feat // compress_ratio, num_feat // compress_ratio, 3, 1, 1,
-                          groups=num_feat // compress_ratio),
-                nn.GELU(),
-                nn.Conv2d(num_feat // compress_ratio, num_feat, 1, 1, 0),
-                nn.Conv2d(num_feat, num_feat, 3, 1, padding=2, groups=num_feat, dilation=2),
-                ChannelAttention(num_feat, squeeze_factor)
-            )
-        else:
-            self.cab = nn.Sequential(
-                nn.Conv2d(num_feat, num_feat // compress_ratio, 3, 1, 1),
-                nn.GELU(),
-                nn.Conv2d(num_feat // compress_ratio, num_feat, 3, 1, 1),
-                ChannelAttention(num_feat, squeeze_factor)
-            )
 
-    def forward(self, x):
-        return self.cab(x)
 
 class ParameterFreeAttetion(nn.Module):
     def __init__(self, num_feat, is_light_sr=False):
@@ -700,22 +675,4 @@ class ParameterFreeAttetion(nn.Module):
         return out
 
 
-class ChannelAttention(nn.Module):
-    """Channel attention used in RCAN.
-    Args:
-        num_feat (int): Channel number of intermediate features.
-        squeeze_factor (int): Channel squeeze factor. Default: 16.
-    """
 
-    def __init__(self, num_feat, squeeze_factor=16):
-        super(ChannelAttention, self).__init__()
-        self.attention = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(num_feat, num_feat // squeeze_factor, 1, padding=0),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(num_feat // squeeze_factor, num_feat, 1, padding=0),
-            nn.Sigmoid())
-
-    def forward(self, x):
-        y = self.attention(x)
-        return x * y
